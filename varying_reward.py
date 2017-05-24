@@ -1,6 +1,13 @@
 import sys
+import copy
 import random
 import numpy as np
+from phase_lstm import PLSTM
+from lstm import LSTM
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.autograd import Variable
 
 def create_obstacles(width, height):
 	return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)]
@@ -18,6 +25,21 @@ def obstacle_movement(t):
 		return (-1,0) # move left
 	elif t % 6 == 5:
 		return (-1, 0) # move left
+
+def create_targets(memory, q_vals, target_net, gamma=1):
+	# memory: 0 - current_state 1: action index 2: reward 3: next state
+	n_eps = len(memory)
+	action_space_size = target_net.output_size 
+	q_target = torch.zeros((n_eps, action_space_size))
+	
+	for i in range(n_eps):
+		s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+		q_prime = target_net.forward(s_prime)
+		q_target[i,:] = q_vals[i][0,:].data.clone()
+		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[0,np.argmax(q_prime.data.numpy())])
+
+	target_net.reset()
+	return q_target
 
 
 def goal_1_reward_func(t):
@@ -39,7 +61,7 @@ class State():
 			self.n_obs += 1
 		
 		self.list_of_obstacles = list_of_obstacles
-		self.state = np.zeros(2*(self.n_obs+1),)
+		self.state = np.zeros(2*(self.n_obs+1))
 		self.state[0] = self.coordinates[0]
 		self.state[1] = self.coordinates[1]
 		for i in range(1,len(list_of_obstacles)+1):
@@ -150,34 +172,73 @@ class TransitionFunction():
 		return new_state
 
 
+def epsilon_greedy(action_vector, n_episodes, n, low=0.1, high=0.9):
+	eps = ((low-high)/n_episodes)*n + high
+	if np.random.uniform() > eps:
+		return np.argmax(action_vector)
+	else:
+		return np.random.randint(low=0, high=5)
+
+
 def main():
 	height = 16
 	width = 16
+	max_episode_length = 400
+	n_episodes = 1000
+	n_copy_after = 100
 
 	obstacles = create_obstacles(width,height)
 	s = State((0,0),obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(15,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(15,15),goal_2_func=goal_2_reward_func)
-	total_reward = 0
-	for i in range(10000):
-		a = Action(random.randint(0,4))
-		t = R.t
-		s_prime = T(s,a,t)
-		reward = R(s,a,s_prime)
-		total_reward += reward
-		if R.terminal == True:
-			print 'Reached goal state!'
-			break
-		#print 'Time: ', t
-		#print 'S: ', s.coordinates
-		#print 'S\': ', s_prime.coordinates
-		#print 'O old: ', s.list_of_obstacles
-		#print 'O new: ', s_prime.list_of_obstacles
-		#print 'A: ', Action.oned_to_twod(a.delta)
-		s = s_prime
+	
+	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=1, batch_size=1)
+	target_net = copy.deepcopy(policy)
+	criterion = nn.MSELoss()
+	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
 
-	print 'Episode lasted for %d episodes.' % (i+1)
-	print 'Total reward collected: ', total_reward
+	list_of_total_rewards = []
+
+	for i in range(n_episodes):
+		total_reward = 0
+		memory = []
+		q_vals = []
+		for j in range(max_episode_length):
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
+			a = Action(epsilon_greedy(q.data.numpy(),n_episodes, i))
+			t = R.t
+			s_prime = T(s,a,t)
+			reward = R(s,a,s_prime)
+			total_reward += reward
+			if R.terminal == True:
+				print 'Reached goal state!'
+				break
+			memory.append((s,a.delta,reward,s_prime))
+			q_vals.append(q)
+			s = s_prime
+
+		print 'Episode lasted for %d episodes.' % (j+1)
+		print 'Total reward collected: ', total_reward
+		list_of_total_rewards.append(total_reward)
+		# backward pass
+		targets = Variable(create_targets(memory, q_vals, target_net, gamma=1), requires_grad=False)
+		outputs = torch.stack(q_vals,0).squeeze(1)
+		loss = criterion(outputs, targets)
+		loss.backward(retain_variables=False)
+		# clip gradients here ...
+		nn.utils.clip_grad_norm(policy.parameters(), 2.0)
+		for p in policy.parameters():
+			p.data.add_(0.0001, p.grad.data)
+		# optimizer step
+		optimizer.step()
+		# Reset environment and policy hidden vector at the end of episode
+		policy.reset()
+		R.reset()
+		s = State((0,0),obstacles)
+
+		if i % n_copy_after == 0:
+			target_net = copy.deepcopy(policy)
 
 if __name__ == '__main__':
 	main()
