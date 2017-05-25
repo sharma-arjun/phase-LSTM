@@ -223,7 +223,7 @@ def main():
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func)
 	M = ExperienceReplay()
 	
-	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=1, batch_size=1)
+	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	target_net = copy.deepcopy(policy)
 	criterion = nn.MSELoss()
 	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
