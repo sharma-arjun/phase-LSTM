@@ -172,8 +172,14 @@ class TransitionFunction():
 		return new_state
 
 
-def epsilon_greedy(action_vector, n_episodes, n, low=0.1, high=0.9):
+def epsilon_greedy_linear_decay(action_vector, n_episodes, n, low=0.1, high=0.9):
 	eps = ((low-high)/n_episodes)*n + high
+	if np.random.uniform() > eps:
+		return np.argmax(action_vector)
+	else:
+		return np.random.randint(low=0, high=5)
+
+def epsilon_greedy(action_vector, eps):
 	if np.random.uniform() > eps:
 		return np.argmax(action_vector)
 	else:
@@ -211,7 +217,8 @@ def main():
 		for j in range(max_episode_length):
 			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			q = policy.forward(x)
-			a = Action(epsilon_greedy(q.data.numpy(),n_episodes, i))
+			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
+			a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
@@ -228,7 +235,7 @@ def main():
 		list_of_total_rewards.append(total_reward)
 		list_of_n_episodes.append(j+1)
 		if i % 500 == 0 and i > 0:
-			print str(i) + ': Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500) + ' Episode: ' + str(sum(list_of_n_episodes[i-500:i])/500)
+			print str(i) + ': Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Episode: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
 		# backward pass
 		targets = Variable(create_targets(memory, q_vals, target_net, gamma=1), requires_grad=False)
 		outputs = torch.stack(q_vals,0).squeeze(1)
