@@ -43,7 +43,7 @@ def create_targets(memory, q_vals, target_net, gamma=1):
 
 
 def goal_1_reward_func(t):
-	return -20
+	return 20
 
 def goal_2_reward_func(t):
 	return 20
@@ -172,6 +172,27 @@ class TransitionFunction():
 		return new_state
 
 
+
+class ExperienceReplay():
+	def __init__(self, max_memory_size = 100):
+		self.memory = []
+		self.oldest = -1
+		self.max_memory_size = 100
+	
+	def add(self, experience):
+		if len(self.memory) < self.max_memory_size: 
+			self.memory.append(experience)
+			self.oldest = 0
+		else:
+			self.memory.insert(self.oldest, experience)
+			self.oldest = (self.oldest + 1) % self.max_memory_size
+
+	def sample(self):
+		idx = np.random.randint(0, high=len(self.memory))
+		return self.memory[idx]
+			
+
+
 def epsilon_greedy_linear_decay(action_vector, n_episodes, n, low=0.1, high=0.9):
 	eps = ((low-high)/n_episodes)*n + high
 	if np.random.uniform() > eps:
@@ -189,14 +210,16 @@ def epsilon_greedy(action_vector, eps):
 def main():
 	height = 17
 	width = 17
-	max_episode_length = 400
+	max_episode_length = 500
 	n_episodes = 50000
 	n_copy_after = 100
+	burn_in = 10
 
 	obstacles = create_obstacles(width,height)
 	s = State((8,0),obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(16,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(16,16),goal_2_func=goal_2_reward_func)
+	M = ExperienceReplay()
 	
 	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=1, batch_size=1)
 	target_net = copy.deepcopy(policy)
@@ -206,19 +229,42 @@ def main():
 	list_of_total_rewards = []
 	list_of_n_episodes = []
 
+	#Burn in with random policy
+	for i in range(burn_in):
+		episode_experience = []
+		for j in range(max_episode_length):
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			#q = policy.forward(x)
+			a = Action(np.random.randint(0,high=5))
+			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
+			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
+			t = R.t
+			s_prime = T(s,a,t)
+			reward = R(s,a,s_prime)
+			if R.terminal == True:
+				#print 'Reached goal state!'
+				break
+			episode_experience.append((s,a.delta,reward,s_prime))
+			s = s_prime
+
+		M.add(episode_experience)
+		R.reset()
+		s = State((8,0),obstacles)
+
+	print 'Burn in completed'
+
 	filename = sys.argv[1]
 	print 'Writing to ' + filename
 	f = open(filename,'w')
 
 	for i in range(n_episodes):
 		total_reward = 0
-		memory = []
-		q_vals = []
+		episode_experience = []
 		for j in range(max_episode_length):
 			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			q = policy.forward(x)
-			a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
-			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
+			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
+			a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
@@ -226,38 +272,57 @@ def main():
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			memory.append((s,a.delta,reward,s_prime))
-			q_vals.append(q)
+			episode_experience.append((s,a.delta,reward,s_prime))
+			#q_vals.append(q)
 			s = s_prime
 
+		M.add(episode_experience)
 		#print 'Episode lasted for %d steps.' % (j+1)
 		#print 'Total reward collected: ', total_reward
 		list_of_total_rewards.append(total_reward)
 		list_of_n_episodes.append(j+1)
 		if i % 500 == 0 and i > 0:
 			print str(i) + ': Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Episode: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
+
+		policy.reset()
+
+		# forward pass through memory sample
+		memory = M.sample()
+		q_vals = []
+		for j in range(len(memory)):
+			s = memory[j][0]
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
+			q_vals.append(q)
+
 		# backward pass
 		targets = Variable(create_targets(memory, q_vals, target_net, gamma=1), requires_grad=False)
 		outputs = torch.stack(q_vals,0).squeeze(1)
 		loss = criterion(outputs, targets)
 		loss.backward(retain_variables=False)
+
 		# clip gradients here ...
 		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
 		for p in policy.parameters():
 			p.data.add_(0.0001, p.grad.data)
+
 		# optimizer step
 		optimizer.step()
+
 		# Reset environment and policy hidden vector at the end of episode
 		policy.reset()
 		R.reset()
 		s = State((8,0),obstacles)
 
-		if i % n_copy_after == 0:
+		# copy into target network
+		if i % n_copy_after == 0 and i > 0:
 			target_net = copy.deepcopy(policy)
 
+		# write to file for plotting
 		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
 
 
+	# testing with greedy policy
 	print 'Using greedy policy ...'
 	s = State((8,0), obstacles)
 	R.reset()
