@@ -43,7 +43,7 @@ def create_targets(memory, q_vals, target_net, gamma=1):
 
 
 def goal_1_reward_func(t):
-	return 20
+	return -20
 
 def goal_2_reward_func(t):
 	return 20
@@ -194,9 +194,9 @@ def main():
 	n_copy_after = 100
 
 	obstacles = create_obstacles(width,height)
-	s = State((0,0),obstacles)
+	s = State((8,0),obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
-	R = RewardFunction(penalty=-1,goal_1_coordinates=(15,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(15,15),goal_2_func=goal_2_reward_func)
+	R = RewardFunction(penalty=-1,goal_1_coordinates=(16,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(16,16),goal_2_func=goal_2_reward_func)
 	
 	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=1, batch_size=1)
 	target_net = copy.deepcopy(policy)
@@ -217,8 +217,8 @@ def main():
 		for j in range(max_episode_length):
 			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			q = policy.forward(x)
-			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
-			a = Action(epsilon_greedy(q.data.numpy(), 0.1))
+			a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
+			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
@@ -256,6 +256,25 @@ def main():
 			target_net = copy.deepcopy(policy)
 
 		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
+
+
+	print 'Using greedy policy ...'
+	s = State((8,0), obstacles)
+	R.reset()
+	total_reward = 0
+	step_count = 0
+	while R.terminal == False:
+		x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+		q = policy.forward(x)
+		a = Action(np.argmax(q.data.numpy()))
+		t = R.t
+		s_prime = T(s,a,t)
+		reward = R(s,a,s_prime)
+		total_reward += reward
+		step_count += 1
+
+	print 'Total reward', total_reward
+	print 'Number of steps', step_count
 
 	f.close()	
 
