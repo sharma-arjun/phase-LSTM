@@ -43,10 +43,10 @@ def create_targets(memory, q_vals, target_net, gamma=1):
 
 
 def goal_1_reward_func(t):
-	return 10
+	return 20
 
 def goal_2_reward_func(t):
-	return 10
+	return 20
 
 
 
@@ -154,15 +154,15 @@ class TransitionFunction():
 			else:
 				if (max(min(state.coordinates[0]+1,self.width-1),0), state.coordinates[1]) not in new_list_of_obstacles: # right
 					new_coordinates = (max(min(state.coordinates[0]+1,self.width-1),0), state.coordinates[1])
-					print 'Warning at transition 1'
+					#print 'Warning at transition 1'
 				elif (max(min(state.coordinates[0]-1,self.width-1),0), state.coordinates[1]) not in new_list_of_obstacles: # left
 					new_coordinates = (max(min(state.coordinates[0]-1,self.width-1),0), state.coordinates[1])
-					print 'Warning at transition 2'
+					#print 'Warning at transition 2'
 				elif (state.coordinates[0], max(min(state.coordinates[1]-1,self.height-1),0)) not in new_list_of_obstacles: # down
 					new_coordinates = (state.coordinates[0], max(min(state.coordinates[1]-1,self.height-1),0))
-					print 'Warning at transition 3'
+					#print 'Warning at transition 3'
 				elif (state.coordinates[0], max(min(state.coordinates[1]+1,self.height-1),0)) not in new_list_of_obstacles: # up
-					print 'Warning at transition 4'
+					#print 'Warning at transition 4'
 					new_coordinates = (state.coordinates[0], max(min(state.coordinates[1]+1,self.height-1),0))
 				else:
 					print 'There is an obstacle for every transition!!!'
@@ -181,10 +181,10 @@ def epsilon_greedy(action_vector, n_episodes, n, low=0.1, high=0.9):
 
 
 def main():
-	height = 16
-	width = 16
+	height = 17
+	width = 17
 	max_episode_length = 400
-	n_episodes = 1000
+	n_episodes = 50000
 	n_copy_after = 100
 
 	obstacles = create_obstacles(width,height)
@@ -198,6 +198,11 @@ def main():
 	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
 
 	list_of_total_rewards = []
+	list_of_n_episodes = []
+
+	filename = sys.argv[1]
+	print 'Writing to ' + filename
+	f = open(filename,'w')
 
 	for i in range(n_episodes):
 		total_reward = 0
@@ -212,22 +217,25 @@ def main():
 			reward = R(s,a,s_prime)
 			total_reward += reward
 			if R.terminal == True:
-				print 'Reached goal state!'
+				#print 'Reached goal state!'
 				break
 			memory.append((s,a.delta,reward,s_prime))
 			q_vals.append(q)
 			s = s_prime
 
-		print 'Episode lasted for %d episodes.' % (j+1)
-		print 'Total reward collected: ', total_reward
+		#print 'Episode lasted for %d steps.' % (j+1)
+		#print 'Total reward collected: ', total_reward
 		list_of_total_rewards.append(total_reward)
+		list_of_n_episodes.append(j+1)
+		if i % 500 == 0 and i > 0:
+			print str(i) + ': Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500) + ' Episode: ' + str(sum(list_of_n_episodes[i-500:i])/500)
 		# backward pass
 		targets = Variable(create_targets(memory, q_vals, target_net, gamma=1), requires_grad=False)
 		outputs = torch.stack(q_vals,0).squeeze(1)
 		loss = criterion(outputs, targets)
 		loss.backward(retain_variables=False)
 		# clip gradients here ...
-		nn.utils.clip_grad_norm(policy.parameters(), 2.0)
+		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
 		for p in policy.parameters():
 			p.data.add_(0.0001, p.grad.data)
 		# optimizer step
@@ -235,10 +243,14 @@ def main():
 		# Reset environment and policy hidden vector at the end of episode
 		policy.reset()
 		R.reset()
-		s = State((0,0),obstacles)
+		s = State((8,0),obstacles)
 
 		if i % n_copy_after == 0:
 			target_net = copy.deepcopy(policy)
+
+		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
+
+	f.close()	
 
 if __name__ == '__main__':
 	main()
