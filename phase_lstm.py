@@ -79,6 +79,8 @@ class PLSTM(nn.Module):
 			dummy_loss = dummy_criterion(dummy_o, dummy_y)
 			dummy_loss.backward()
 
+		self.h = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True) # reset to zero after dummy pass
+
 	def forward(self,x,phase):
 		w = self.weight_from_phase(phase, self.alpha)
 		gru = nn.GRUCell(self.input_size, self.hidden_size)

@@ -1,17 +1,22 @@
 import sys
 import copy
+import math
 import random
 import numpy as np
-from phase_lstm import PLSTM
+from phase_lstm_multilayer import PLSTM
 from lstm import LSTM
+from mlp import MLP
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 
 def create_obstacles(width, height):
-	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)]
-	return [(3,3),(6,3),(3,6),(6,6)]
+	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
+	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)] # 17 x 17
+	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
+	#return [(4,4),(7,4),(4,8),(7,8)] #13 x 13
+	return [(3,3),(6,3),(3,6),(6,6)] #12 x 12
 
 def obstacle_movement(t):
 	if t % 6 == 0:
@@ -27,15 +32,32 @@ def obstacle_movement(t):
 	elif t % 6 == 5:
 		return (-1, 0) # move left
 
-def create_targets(memory, q_vals, target_net, gamma=1):
+def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 	# memory: 0 - current_state 1: action index 2: reward 3: next state
 	n_eps = len(memory)
 	action_space_size = target_net.output_size 
 	q_target = torch.zeros((n_eps, action_space_size))
 	
 	for i in range(n_eps):
-		s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
-		q_prime = target_net.forward(s_prime)
+		phase_prime = memory[i][5]
+		if policy_type == 0:
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			q_prime = target_net.forward(s_prime)
+		elif policy_type == 1:
+			inp = np.concatenate((np.array(memory[i][3].state), np.asarray([phase_prime])))
+			s_prime = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			q_prime = target_net.forward(s_prime)
+		elif policy_type == 2:
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			q_prime = target_net.forward(s_prime, phase_prime)
+		elif policy_type == 3:
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			q_prime = target_net.forward(s_prime)
+		elif policy_type == 4:
+			inp = np.concatenate((np.array(memory[i][3].state), np.asarray([phase_prime])))
+			s_prime = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			q_prime = target_net.forward(s_prime)
+
 		q_target[i,:] = q_vals[i][0,:].data.clone()
 		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[0,np.argmax(q_prime.data.numpy())])
 
@@ -43,12 +65,13 @@ def create_targets(memory, q_vals, target_net, gamma=1):
 	return q_target
 
 
-def goal_1_reward_func(t):
+def goal_1_reward_func(w,t,p):
+	#return -20*math.sin(w*t + p) + 5
 	return -20
 
-def goal_2_reward_func(t):
+def goal_2_reward_func(w,t,p):
+	#return 20*math.sin(w*t + p) + 5
 	return 20
-
 
 
 class State():
@@ -93,7 +116,7 @@ class Action():
 
 
 class RewardFunction():
-	def __init__(self, penalty, goal_1_coordinates, goal_1_func, goal_2_coordinates, goal_2_func):
+	def __init__(self, penalty, goal_1_coordinates, goal_1_func, goal_2_coordinates, goal_2_func, w1=None, w2=None):
 		# penalty - number (integer), goal_1_coordinates - tuple, goal_1_func - lambda func returning number, goal_2_coordinates - tuple, goal_2_func - lambda function returning number
 		self.terminal = False
 		self.penalty = penalty
@@ -102,6 +125,11 @@ class RewardFunction():
 		self.goal_1_coordinates = goal_1_coordinates
 		self.goal_2_coordinates = goal_2_coordinates
 		self.t = 0 # timer
+		self.w1 = w1
+		self.w2 = w2
+		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly every time. Also selected randomly on reset
+		self.p = 0
+		
 
 	def __call__(self, state, action, state_prime):
 		self.t += 1
@@ -110,19 +138,24 @@ class RewardFunction():
 
 		if state_prime.coordinates == self.goal_1_coordinates:
 			self.terminal = True
-			return self.goal_1_func(self.t)
+			return self.goal_1_func(self.w1, self.t, self.p)
 
 		if state_prime.coordinates == self.goal_2_coordinates:
 			self.terminal = True
-			return self.goal_2_func(self.t)
+			return self.goal_2_func(self.w2, self.t, self.p)
 
 	def reset(self, goal_1_func=None, goal_2_func=None):
 		self.terminal = False
 		self.t = 0
+		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly
+		self.p = 0
 		if goal_1_func != None:
 			self.goal_1_func = goal_1_func
 		if goal_2_func != None:
 			self.goal_2_func = goal_2_func
+
+	def phase(self):
+		return (min(self.w1, self.w2)*self.t + self.p) % (2*math.pi) # assuming that lcm(w1,w2) = max(w1,w2)
 		
 	
 class TransitionFunction():
@@ -178,7 +211,7 @@ class ExperienceReplay():
 	def __init__(self, max_memory_size = 100):
 		self.memory = []
 		self.oldest = -1
-		self.max_memory_size = 100
+		self.max_memory_size = max_memory_size
 	
 	def add(self, experience):
 		if len(self.memory) < self.max_memory_size: 
@@ -195,7 +228,11 @@ class ExperienceReplay():
 
 
 def epsilon_greedy_linear_decay(action_vector, n_episodes, n, low=0.1, high=0.9):
-	eps = ((low-high)/n_episodes)*n + high
+	if n <= n_episodes:
+		eps = ((low-high)/n_episodes)*n + high
+	else:
+		eps = low
+
 	if np.random.uniform() > eps:
 		return np.argmax(action_vector)
 	else:
@@ -211,19 +248,30 @@ def epsilon_greedy(action_vector, eps):
 def main():
 	height = 12
 	width = 12
-	max_episode_length = 500
+	max_episode_length = 600
 	n_episodes = 50000
-	n_copy_after = 100
-	burn_in = 10
+	n_copy_after = 1000
+	burn_in = 100
+	policy_type = int(sys.argv[1])
 
 	obstacles = create_obstacles(width,height)
-	start_loc = (5,0)
+	start_loc = (0,5)
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
-	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func)
-	M = ExperienceReplay()
+	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
+	M = ExperienceReplay(max_memory_size=1000)
 	
-	policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+	if policy_type == 0: # rnn without phase
+		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+	elif policy_type == 1: # rnn with phase as additional input
+		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+	elif policy_type == 2: # phase rnn
+		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+	elif policy_type == 3: # mlp without phase
+		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+	elif policy_type == 4: # mlp with phase as additional input
+		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+
 	target_net = copy.deepcopy(policy)
 	criterion = nn.MSELoss()
 	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
@@ -235,10 +283,11 @@ def main():
 	for i in range(burn_in):
 		episode_experience = []
 		for j in range(max_episode_length):
-			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			phase = R.phase()
+			#x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			#q = policy.forward(x)
 			a = Action(np.random.randint(0,high=5))
-			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
+			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),10000, i))
 			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
 			s_prime = T(s,a,t)
@@ -246,7 +295,8 @@ def main():
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			episode_experience.append((s,a.delta,reward,s_prime))
+			phase_prime = R.phase()
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			s = s_prime
 
 		M.add(episode_experience)
@@ -255,18 +305,37 @@ def main():
 
 	print 'Burn in completed'
 
-	filename = sys.argv[1]
+	filename = 'plotfiles/' + sys.argv[2]
 	print 'Writing to ' + filename
 	f = open(filename,'w')
 
 	for i in range(n_episodes):
 		total_reward = 0
 		episode_experience = []
+		# zero gradients
+		optimizer.zero_grad()
 		for j in range(max_episode_length):
-			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-			q = policy.forward(x)
-			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),n_episodes, i))
-			a = Action(epsilon_greedy(q.data.numpy(), 0.1))
+			phase = R.phase()
+			if policy_type == 0:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 1:
+				inp = np.concatenate((s.state,np.asarray([phase])))
+				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 2:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x, phase)
+			elif policy_type == 3:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 4:
+				inp = np.concatenate((s.state,np.asarray([phase])))
+				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+
+			a = Action(epsilon_greedy_linear_decay(q.data.numpy(), 25000, i))
+			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
@@ -274,7 +343,8 @@ def main():
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			episode_experience.append((s,a.delta,reward,s_prime))
+			phase_prime = R.phase()
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			#q_vals.append(q)
 			s = s_prime
 
@@ -284,25 +354,47 @@ def main():
 		list_of_total_rewards.append(total_reward)
 		list_of_n_episodes.append(j+1)
 		if i % 500 == 0 and i > 0:
-			print str(i) + ': Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Episode: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
-
+			print str(i) + ': Avg. Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Avg. Episode length: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
 
 		# write to file for plotting
 		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
 
 		policy.reset()
 
+		# save policy
+		if i % 1000 == 0 and i> 0:
+			checkpoint_name = 'checkpoints/' + sys.argv[3] + '_' + str(i) + '.pth'
+			f_w = open(checkpoint_name, 'wb')
+			torch.save(policy,f_w)
+
 		# forward pass through memory sample
 		memory = M.sample()
 		q_vals = []
 		for j in range(len(memory)):
 			s = memory[j][0]
-			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-			q = policy.forward(x)
+			phase = memory[j][4]
+			if policy_type == 0:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 1:
+				inp = np.concatenate((s.state,np.asarray([phase])))
+				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 2:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x, phase)
+			elif policy_type == 3:
+				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+			elif policy_type == 4:
+				inp = np.concatenate((s.state,np.asarray([phase])))
+				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x)
+
 			q_vals.append(q)
 
 		# backward pass
-		targets = Variable(create_targets(memory, q_vals, target_net, gamma=1), requires_grad=False)
+		targets = Variable(create_targets(memory, q_vals, target_net, policy_type, gamma=1), requires_grad=False)
 		outputs = torch.stack(q_vals,0).squeeze(1)
 		loss = criterion(outputs, targets)
 		loss.backward(retain_variables=False)
@@ -311,6 +403,10 @@ def main():
 		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
 		for p in policy.parameters():
 			p.data.add_(0.0001, p.grad.data)
+
+		# phase lstm step
+		if policy_type == 2:
+			policy.update_control_gradients()
 
 		# optimizer step
 		optimizer.step()
@@ -332,6 +428,7 @@ def main():
 	total_reward = 0
 	step_count = 0
 	while R.terminal == False:
+		phase = R.phase()
 		x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 		q = policy.forward(x)
 		a = Action(np.argmax(q.data.numpy()))
@@ -340,11 +437,12 @@ def main():
 		reward = R(s,a,s_prime)
 		total_reward += reward
 		step_count += 1
+		s = s_prime
 
 	print 'Total reward', total_reward
 	print 'Number of steps', step_count
 
-	f.close()	
+	f.close()
 
 if __name__ == '__main__':
 	main()
