@@ -17,6 +17,7 @@ def create_obstacles(width, height):
 	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
 	#return [(4,4),(7,4),(4,8),(7,8)] # 13 x 13
 	return [(3,3),(6,3),(3,6),(6,6)] # 12 x 12
+	#return [] # no obstacles
 
 def obstacle_movement(t):
 	if t % 6 == 0:
@@ -127,8 +128,7 @@ class RewardFunction():
 		self.t = 0 # timer
 		self.w1 = w1
 		self.w2 = w2
-		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly every time. Also selected randomly on reset
-		self.p = 0
+		self.p = None
 		
 
 	def __call__(self, state, action, state_prime):
@@ -147,29 +147,28 @@ class RewardFunction():
 	def reset(self, goal_1_func=None, goal_2_func=None):
 		self.terminal = False
 		self.t = 0
-		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly
-		self.p = 0
+
 		if goal_1_func != None:
 			self.goal_1_func = goal_1_func
 		if goal_2_func != None:
 			self.goal_2_func = goal_2_func
 
-	def phase(self):
-		return (min(self.w1, self.w2)*self.t + self.p) % (2*math.pi) # assuming that lcm(w1,w2) = max(w1,w2)
-		
-	
+
 class TransitionFunction():
-	def __init__(self, width, height, obs_func):
+	def __init__(self, width, height, obs_func, w, prob=0.1):
 		# height - number (integer), width - number (integer), list_of_obstacles - list of tuples
 		#assert(height >= 16)
 		#assert(width >= 16)
 		self.height = height
 		self.width = width
 		self.obs_func = obs_func
+		self.w = w # controls how often phase changes ... phase will change after every w time steps
+		self.p = 0 # later select randomly between 0, pi/2, pi, 3pi/2, 2pi
+		self.prob = prob # probability with which agent moves with the wind
 
-	def __call__(self, state, action, t):
+	def __call__(self, state, action,t):
 		delta = Action.oned_to_twod(action.delta)
-		t = t+1 # reward is computed later ... t+1 is the correct time to compute new obstacles
+		t = t + 1 # one more than reward because reward is called after transition and t is maintained by reward. t maintained by reward for easy reset.
 		new_list_of_obstacles = []
 		obs_delta = self.obs_func(t)
 		for obs in state.list_of_obstacles:
@@ -179,6 +178,24 @@ class TransitionFunction():
 				sys.exit()
 			new_list_of_obstacles.append(new_obs)
 
+		# internal phase
+		phase = self.phase(t-1) # phase computed on current time t not t+1
+		#change delta based on internal phase
+		if phase == 0: #up
+			if np.random.uniform() < self.prob:
+				delta = (0,1)
+		elif phase == math.pi/2: # right
+			if np.random.uniform() < self.prob:
+				delta = (1,0)
+		elif phase == math.pi: # down
+			if np.random.uniform() < self.prob:
+				delta = (0,-1)
+		elif phase == 3*math.pi/2: # left
+			if np.random.uniform() < self.prob:
+				delta = (-1,0)
+		else:
+			print 'Unknown phase'
+			sys.exit()
 		# compute new coordinates here. Stay within boundary and don't move over obstacles (new).
 		new_coordinates = (max(min(state.coordinates[0] + delta[0],self.width-1),0), max(min(state.coordinates[1] + delta[1],self.height-1),0))
 		if new_coordinates in new_list_of_obstacles:
@@ -205,6 +222,8 @@ class TransitionFunction():
 		new_state = State(new_coordinates, new_list_of_obstacles)
 		return new_state
 
+	def phase(self,t):
+		return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi
 
 
 class ExperienceReplay():
@@ -257,7 +276,7 @@ def main():
 	obstacles = create_obstacles(width,height)
 	start_loc = (0,5)
 	s = State(start_loc,obstacles)
-	T = TransitionFunction(width,height,obstacle_movement)
+	T = TransitionFunction(width,height,obstacle_movement,8)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
@@ -283,19 +302,19 @@ def main():
 	for i in range(burn_in):
 		episode_experience = []
 		for j in range(max_episode_length):
-			phase = R.phase()
 			#x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			#q = policy.forward(x)
 			a = Action(np.random.randint(0,high=5))
 			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),10000, i))
 			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
+			phase = T.phase(t)
+			phase_prime = T.phase(t+1)
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
 			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			s = s_prime
 
@@ -315,7 +334,7 @@ def main():
 		# zero gradients
 		optimizer.zero_grad()
 		for j in range(max_episode_length):
-			phase = R.phase()
+			phase = T.phase(R.t)
 			if policy_type == 0:
 				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
@@ -343,7 +362,7 @@ def main():
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
+			phase_prime = T.phase(R.t)
 			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			#q_vals.append(q)
 			s = s_prime
@@ -428,7 +447,7 @@ def main():
 	total_reward = 0
 	step_count = 0
 	while R.terminal == False:
-		phase = R.phase()
+		phase = T.phase(R.t)
 		x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 		q = policy.forward(x)
 		a = Action(np.argmax(q.data.numpy()))
