@@ -448,8 +448,23 @@ def main():
 	step_count = 0
 	while R.terminal == False:
 		phase = T.phase(R.t)
-		x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-		q = policy.forward(x)
+		if policy_type == 0:
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
+		elif policy_type == 1:
+			inp = np.concatenate((s.state,np.asarray([phase])))
+			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
+		elif policy_type == 2:
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x, phase)
+		elif policy_type == 3:
+			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
+		elif policy_type == 4:
+			inp = np.concatenate((s.state,np.asarray([phase])))
+			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x)
 		a = Action(np.argmax(q.data.numpy()))
 		t = R.t
 		s_prime = T(s,a,t)
