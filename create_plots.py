@@ -12,8 +12,8 @@ list_of_ep_len = []
 for line in f:
 	l = line.strip().split()
 	if len(l) == 2:
-		list_of_rewards.append(int(l[0]))
-		list_of_ep_len.append(int(l[1]))
+		list_of_rewards.append(float(l[0]))
+		list_of_ep_len.append(float(l[1]))
 	else:
 		break
 
