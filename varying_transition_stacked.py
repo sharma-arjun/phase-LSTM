@@ -282,6 +282,8 @@ def main():
 	policy_type = int(sys.argv[1])
 
 	obstacles = create_obstacles(width,height)
+
+	set_diff = list(set(product(tuple(range(width)), repeat=2)) - set(obstacles))
 	#start_loc = (0,5)
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
