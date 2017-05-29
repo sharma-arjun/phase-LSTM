@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
+from itertools import product
 
 def create_obstacles(width, height):
 	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
