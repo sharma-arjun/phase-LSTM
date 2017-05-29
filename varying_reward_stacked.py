@@ -250,6 +250,8 @@ def epsilon_greedy(action_vector, eps):
 	else:
 		return np.random.randint(low=0, high=5)
 
+def sample_start(set_diff):
+	return random.choice(set_diff)
 
 def main():
 	height = width = 12
@@ -260,7 +262,10 @@ def main():
 	policy_type = int(sys.argv[1])
 
 	obstacles = create_obstacles(width,height)
-	start_loc = (0,5)
+
+	set_diff = list(set(product(tuple(range(width)), repeat=2)) - set(obstacles))
+	#start_loc = (0,5)
+	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
@@ -310,6 +315,7 @@ def main():
 
 		M.add(episode_experience)
 		R.reset()
+		start_loc = sample_start(set_diff)
 		s = State(start_loc,obstacles)
 
 	print 'Burn in completed'
@@ -438,6 +444,7 @@ def main():
 		# Reset environment and policy hidden vector at the end of episode
 		policy.reset()
 		R.reset()
+		start_loc = sample_start(set_diff)
 		s = State(start_loc,obstacles)
 
 		# copy into target network
@@ -447,6 +454,7 @@ def main():
 
 	# testing with greedy policy
 	print 'Using greedy policy ...'
+	start_loc = (0,5)
 	s_2 = State(start_loc, obstacles)
 	s_1 = State(start_loc, obstacles)
 	s = State(start_loc, obstacles)
