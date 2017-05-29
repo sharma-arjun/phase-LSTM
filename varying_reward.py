@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
+from itertools import product
 
 def create_obstacles(width, height):
 	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
@@ -66,12 +67,13 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
+	return 20*math.sin(w*t + p) + 5
 	#return -20*math.sin(w*t + p) + 5
-	return -20
+	#return -20
 
 def goal_2_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return 20
+	return 20*math.sin(w*t + p) + 5
+	#return 20
 
 
 class State():
@@ -245,9 +247,11 @@ def epsilon_greedy(action_vector, eps):
 		return np.random.randint(low=0, high=5)
 
 
+def sample_start(set_diff):
+	return random.choice(set_diff)
+
 def main():
-	height = 12
-	width = 12
+	width = height = 12
 	max_episode_length = 600
 	n_episodes = 50000
 	n_copy_after = 1000
@@ -255,22 +259,25 @@ def main():
 	policy_type = int(sys.argv[1])
 
 	obstacles = create_obstacles(width,height)
-	start_loc = (0,5)
+	
+	set_diff = list(set(product(tuple(range(width)), repeat=2)) - set(obstacles))
+	#start_loc = (0,5)
+	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
-	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
-	M = ExperienceReplay(max_memory_size=1000)
+	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/4, w2=math.pi/8)
+	M = ExperienceReplay(max_memory_size=1)
 	
 	if policy_type == 0: # rnn without phase
-		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 1: # rnn with phase as additional input
-		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 2: # phase rnn
-		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 3: # mlp without phase
-		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 4: # mlp with phase as additional input
-		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 
 	target_net = copy.deepcopy(policy)
 	criterion = nn.MSELoss()
@@ -292,15 +299,16 @@ def main():
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
+			phase_prime = R.phase()
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			s = s_prime
 
 		M.add(episode_experience)
 		R.reset()
+		start_loc = sample_start(set_diff)
 		s = State(start_loc,obstacles)
 
 	print 'Burn in completed'
@@ -340,11 +348,11 @@ def main():
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
 			total_reward += reward
+			phase_prime = R.phase()
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
 			#q_vals.append(q)
 			s = s_prime
 
@@ -414,6 +422,7 @@ def main():
 		# Reset environment and policy hidden vector at the end of episode
 		policy.reset()
 		R.reset()
+		start_loc = sample_start(set_diff)
 		s = State(start_loc,obstacles)
 
 		# copy into target network
@@ -423,6 +432,7 @@ def main():
 
 	# testing with greedy policy
 	print 'Using greedy policy ...'
+	start_loc = (0,5)
 	s = State(start_loc, obstacles)
 	R.reset()
 	total_reward = 0
