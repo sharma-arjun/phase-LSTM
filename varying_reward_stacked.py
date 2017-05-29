@@ -305,11 +305,11 @@ def main():
 			t = R.t
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
+			phase_prime = R.phase()
+			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
-			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
 			s_2 = copy.deepcopy(s_1)
 			s_1 = copy.deepcopy(s)
 			s = s_prime
@@ -364,11 +364,11 @@ def main():
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
 			total_reward += reward
+			phase_prime = R.phase()
+			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
-			phase_prime = R.phase()
-			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
 			#q_vals.append(q)
 			s_2 = copy.deepcopy(s_1)
 			s_1 = copy.deepcopy(s)
