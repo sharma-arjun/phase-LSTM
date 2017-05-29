@@ -287,15 +287,15 @@ def main():
 	M = ExperienceReplay(max_memory_size=1000)
 	
 	if policy_type == 0: # rnn without phase
-		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = LSTM(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 1: # rnn with phase as additional input
-		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = LSTM(input_size=s.state.shape[0]*3+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 2: # phase rnn
-		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = PLSTM(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 3: # mlp without phase
-		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = MLP(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 4: # mlp with phase as additional input
-		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = MLP(input_size=s.state.shape[0]*3+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 
 	target_net = copy.deepcopy(policy)
 	criterion = nn.MSELoss()
@@ -407,7 +407,7 @@ def main():
 		for j in range(len(memory)):
 			s_2 = memory[j][0][0]
 			s_1 = memory[j][0][1]
-			s = memory[j][2]
+			s = memory[j][0][2]
 			phase = memory[j][4]
 			if policy_type == 0:
 				inp = np.concatenate((s_2.state, s_1.state, s.state))
