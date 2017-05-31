@@ -18,7 +18,6 @@ def create_obstacles(width, height):
 	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
 	#return [(4,4),(7,4),(4,8),(7,8)] # 13 x 13
 	return [(3,3),(6,3),(3,6),(6,6)] # 12 x 12
-	#return [] # no obstacles
 
 def obstacle_movement(t):
 	if t % 6 == 0:
@@ -33,7 +32,6 @@ def obstacle_movement(t):
 		return (-1,0) # move left
 	elif t % 6 == 5:
 		return (-1, 0) # move left
-
 
 def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 	# memory: 0 - set of current_states 1: action index 2: reward 3: next state 4: phase 5: phase_prime
@@ -75,12 +73,12 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
-	#return -20*math.sin(w*t + p) + 5
-	return -20
+	return -20*math.sin(w*t + p) + 5
+	#return -20
 
 def goal_2_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return 20
+	return 20*math.sin(w*t + p) + 5
+	#return 20
 
 
 class State():
@@ -136,7 +134,8 @@ class RewardFunction():
 		self.t = 0 # timer
 		self.w1 = w1
 		self.w2 = w2
-		self.p = None
+		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly every time. Also selected randomly on reset
+		self.p = 0
 		
 
 	def __call__(self, state, action, state_prime):
@@ -155,28 +154,29 @@ class RewardFunction():
 	def reset(self, goal_1_func=None, goal_2_func=None):
 		self.terminal = False
 		self.t = 0
-
+		#self.p = np.random.uniform(-math.pi, math.pi) # set randomly
+		self.p = 0
 		if goal_1_func != None:
 			self.goal_1_func = goal_1_func
 		if goal_2_func != None:
 			self.goal_2_func = goal_2_func
 
-
+	def phase(self):
+		return (min(self.w1, self.w2)*self.t + self.p) % (2*math.pi) # assuming that lcm(w1,w2) = max(w1,w2)
+		
+	
 class TransitionFunction():
-	def __init__(self, width, height, obs_func, w, prob=0.1):
+	def __init__(self, width, height, obs_func):
 		# height - number (integer), width - number (integer), list_of_obstacles - list of tuples
 		#assert(height >= 16)
 		#assert(width >= 16)
 		self.height = height
 		self.width = width
 		self.obs_func = obs_func
-		self.w = w # controls how often phase changes ... phase will change after every w time steps
-		self.p = 0 # later select randomly between 0, pi/2, pi, 3pi/2, 2pi
-		self.prob = prob # probability with which agent moves with the wind
 
-	def __call__(self, state, action,t):
+	def __call__(self, state, action, t):
 		delta = Action.oned_to_twod(action.delta)
-		t = t + 1 # one more than reward because reward is called after transition and t is maintained by reward. t maintained by reward for easy reset.
+		t = t+1 # reward is computed later ... t+1 is the correct time to compute new obstacles
 		new_list_of_obstacles = []
 		obs_delta = self.obs_func(t)
 		for obs in state.list_of_obstacles:
@@ -185,37 +185,6 @@ class TransitionFunction():
 				print 'Obstacle moved outside of the grid!!!'
 				sys.exit()
 			new_list_of_obstacles.append(new_obs)
-
-		# internal phase
-		phase = self.phase(t-1) # phase computed on current time t not t+1
-		#change delta based on internal phase
-		if phase == 0: # up
-			if np.random.uniform() < self.prob:
-				delta = (0,1)
-		elif phase == math.pi/4: # up and right
-			if np.random.uniform() < self.prob:
-				delta = (1,1)
-		elif phase == math.pi/2: # right
-			if np.random.uniform() < self.prob:
-				delta = (1,0)
-		elif phase == 3*math.pi/4: # down and right
-			if np.random.uniform() < self.prob:
-				delta = (1,-1)
-		elif phase == math.pi: # down
-			if np.random.uniform() < self.prob:
-				delta = (0,-1)
-		elif phase == 5*math.pi/4: # down and left
-			if np.random.uniform() < self.prob:
-				delta = (-1,-1)
-		elif phase == 3*math.pi/2: # left
-			if np.random.uniform() < self.prob:
-				delta = (-1,0)
-		elif phase == 7*math.pi/4: # up and left
-			if np.random.uniform() < self.prob:
-				delta = (-1,1)
-		else:
-			print 'Unknown phase'
-			sys.exit()
 
 		# compute new coordinates here. Stay within boundary and don't move over obstacles (new).
 		new_coordinates = (max(min(state.coordinates[0] + delta[0],self.width-1),0), max(min(state.coordinates[1] + delta[1],self.height-1),0))
@@ -243,8 +212,6 @@ class TransitionFunction():
 		new_state = State(new_coordinates, new_list_of_obstacles)
 		return new_state
 
-	def phase(self,t):
-		return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi
 
 
 class ExperienceReplay():
@@ -294,6 +261,7 @@ def main():
 	n_copy_after = 1000
 	burn_in = 100
 	policy_type = int(sys.argv[1])
+	policy_checkpoint = sys.argv[2]
 
 	obstacles = create_obstacles(width,height)
 
@@ -301,185 +269,14 @@ def main():
 	#start_loc = (0,5)
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
-	T = TransitionFunction(width,height,obstacle_movement,4,prob=0.5)
+	T = TransitionFunction(width,height,obstacle_movement)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
-	if policy_type == 0: # rnn without phase
-		policy = LSTM(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 1: # rnn with phase as additional input
-		policy = LSTM(input_size=s.state.shape[0]*3+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 2: # phase rnn
-		policy = PLSTM(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 3: # mlp without phase
-		policy = MLP(input_size=s.state.shape[0]*3, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 4: # mlp with phase as additional input
-		policy = MLP(input_size=s.state.shape[0]*3+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+	policy = torch.load(policy_checkpoint)
 
-	target_net = copy.deepcopy(policy)
-	criterion = nn.MSELoss()
-	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
-
-	list_of_total_rewards = []
-	list_of_n_episodes = []
-
-	s_2 = State(start_loc,obstacles)
-	s_1 = State(start_loc,obstacles)
-	#Burn in with random policy
-	for i in range(burn_in):
-		episode_experience = []
-		for j in range(max_episode_length):
-			#x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-			#q = policy.forward(x)
-			a = Action(np.random.randint(0,high=5))
-			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),10000, i))
-			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
-			t = R.t
-			phase = T.phase(t)
-			phase_prime = T.phase(t+1)
-			s_prime = T(s,a,t)
-			reward = R(s,a,s_prime)
-			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
-			if R.terminal == True:
-				#print 'Reached goal state!'
-				break
-			s_2 = copy.deepcopy(s_1)
-			s_1 = copy.deepcopy(s)
-			s = s_prime
-
-		M.add(episode_experience)
-		R.reset()
-		start_loc = sample_start(set_diff)
-		s = State(start_loc,obstacles)
-
-	print 'Burn in completed'
-
-	filename = 'plotfiles/' + sys.argv[2]
-	print 'Writing to ' + filename
-	f = open(filename,'w')
-
-	for i in range(n_episodes):
-		total_reward = 0
-		episode_experience = []
-		# zero gradients
-		optimizer.zero_grad()
-		for j in range(max_episode_length):
-			phase = T.phase(R.t)
-			if policy_type == 0:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 1:
-				inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 2:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x, phase)
-			elif policy_type == 3:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 4:
-				inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-
-			a = Action(epsilon_greedy_linear_decay(q.data.numpy(), 25000, i))
-			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
-			t = R.t
-			s_prime = T(s,a,t)
-			reward = R(s,a,s_prime)
-			total_reward += reward
-			phase_prime = T.phase(R.t)
-			episode_experience.append(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
-			if R.terminal == True:
-				#print 'Reached goal state!'
-				break
-			#q_vals.append(q)
-			s_2 = copy.deepcopy(s_1)
-			s_1 = copy.deepcopy(s)
-			s = s_prime
-
-		M.add(episode_experience)
-		#print 'Episode lasted for %d steps.' % (j+1)
-		#print 'Total reward collected: ', total_reward
-		list_of_total_rewards.append(total_reward)
-		list_of_n_episodes.append(j+1)
-		if i % 500 == 0 and i > 0:
-			print str(i) + ': Avg. Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Avg. Episode length: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
-
-		# write to file for plotting
-		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
-
-		policy.reset()
-
-		# save policy
-		if i % 1000 == 0 and i> 0:
-			checkpoint_name = 'checkpoints/' + sys.argv[3] + '_' + str(i) + '.pth'
-			f_w = open(checkpoint_name, 'wb')
-			torch.save(policy,f_w)
-
-		# forward pass through memory sample
-		memory = M.sample()
-		q_vals = []
-		for j in range(len(memory)):
-			s_2 = memory[j][0][0]
-			s_1 = memory[j][0][1]
-			s = memory[j][0][2]
-			phase = memory[j][4]
-			if policy_type == 0:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 1:
-				inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 2:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x, phase)
-			elif policy_type == 3:
-				inp = np.concatenate((s_2.state, s_1.state, s.state))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 4:
-				inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-
-			q_vals.append(q)
-
-		# backward pass
-		targets = Variable(create_targets(memory, q_vals, target_net, policy_type, gamma=1), requires_grad=False)
-		outputs = torch.stack(q_vals,0).squeeze(1)
-		loss = criterion(outputs, targets)
-		loss.backward(retain_variables=False)
-
-		# clip gradients here ...
-		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
-		for p in policy.parameters():
-			p.data.add_(0.0001, p.grad.data)
-
-		# phase lstm step
-		if policy_type == 2:
-			policy.update_control_gradients()
-
-		# optimizer step
-		optimizer.step()
-
-		# Reset environment and policy hidden vector at the end of episode
-		policy.reset()
-		R.reset()
-		start_loc = sample_start(set_diff)
-		s = State(start_loc,obstacles)
-
-		# copy into target network
-		if i % n_copy_after == 0 and i > 0:
-			target_net = copy.deepcopy(policy)
-
+	app = QtGui.QApplication(sys.argv)
+	visualizer = QTVisualizer('Varying rewards')
 
 	# testing with greedy policy
 	print 'Using greedy policy ...'
@@ -491,7 +288,9 @@ def main():
 	total_reward = 0
 	step_count = 0
 	while R.terminal == False:
-		phase = T.phase(R.t)
+		phase = R.phase()
+		visualizer.draw_world(agent=s.coordinates, obstacles=s.list_of_obstacles, goals=[(11,0),(11,11)])
+		q_refresh()
 		if policy_type == 0:
 			inp = np.concatenate((s_2.state, s_1.state, s.state))
 			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)

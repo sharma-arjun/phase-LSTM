@@ -299,6 +299,7 @@ def main():
 	n_copy_after = 1000
 	burn_in = 100
 	policy_type = int(sys.argv[1])
+	policy_checkpoint = sys.argv[2]
 
 	obstacles = create_obstacles(width,height)
 
@@ -310,167 +311,10 @@ def main():
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
-	if policy_type == 0: # rnn without phase
-		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
-	elif policy_type == 1: # rnn with phase as additional input
-		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
-	elif policy_type == 2: # phase rnn
-		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
-	elif policy_type == 3: # mlp without phase
-		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=10, n_layers=2, batch_size=1)
-	elif policy_type == 4: # mlp with phase as additional input
-		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=10, n_layers=2, batch_size=1)
+	policy = torch.load(policy_checkpoint)
 
-	target_net = copy.deepcopy(policy)
-	criterion = nn.MSELoss()
-	optimizer = optim.Adam(policy.parameters(), lr=0.0001)
-
-	list_of_total_rewards = []
-	list_of_n_episodes = []
-
-	#Burn in with random policy
-	for i in range(burn_in):
-		episode_experience = []
-		for j in range(max_episode_length):
-			#x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-			#q = policy.forward(x)
-			a = Action(np.random.randint(0,high=5))
-			#a = Action(epsilon_greedy_linear_decay(q.data.numpy(),10000, i))
-			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
-			t = R.t
-			phase = T.phase(t)
-			phase_prime = T.phase(t+1)
-			s_prime = T(s,a,t)
-			reward = R(s,a,s_prime)
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
-			if R.terminal == True:
-				#print 'Reached goal state!'
-				break
-			s = s_prime
-
-		M.add(episode_experience)
-		R.reset()
-		start_loc = sample_start(set_diff)
-		s = State(start_loc,obstacles)
-
-	print 'Burn in completed'
-
-	filename = 'plotfiles/' + sys.argv[2]
-	print 'Writing to ' + filename
-	f = open(filename,'w')
-
-	for i in range(n_episodes):
-		total_reward = 0
-		episode_experience = []
-		# zero gradients
-		optimizer.zero_grad()
-		for j in range(max_episode_length):
-			phase = T.phase(R.t)
-			if policy_type == 0:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 1:
-				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 2:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x, phase)
-			elif policy_type == 3:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 4:
-				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-
-			a = Action(epsilon_greedy_linear_decay(q.data.numpy(), 25000, i))
-			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
-			t = R.t
-			s_prime = T(s,a,t)
-			reward = R(s,a,s_prime)
-			total_reward += reward
-			phase_prime = T.phase(R.t)
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
-			if R.terminal == True:
-				#print 'Reached goal state!'
-				break
-			#q_vals.append(q)
-			s = s_prime
-
-		M.add(episode_experience)
-		#print 'Episode lasted for %d steps.' % (j+1)
-		#print 'Total reward collected: ', total_reward
-		list_of_total_rewards.append(total_reward)
-		list_of_n_episodes.append(j+1)
-		if i % 500 == 0 and i > 0:
-			print str(i) + ': Avg. Reward: ' + str(sum(list_of_total_rewards[i-500:i])/500.0) + ' Avg. Episode length: ' + str(sum(list_of_n_episodes[i-500:i])/500.0)
-
-		# write to file for plotting
-		f.write(str(total_reward) + ' ' + str(j+1) + '\n')
-
-		policy.reset()
-
-		# save policy
-		if i % 1000 == 0 and i> 0:
-			checkpoint_name = 'checkpoints/' + sys.argv[3] + '_' + str(i) + '.pth'
-			f_w = open(checkpoint_name, 'wb')
-			torch.save(policy,f_w)
-
-		# forward pass through memory sample
-		memory = M.sample()
-		q_vals = []
-		for j in range(len(memory)):
-			s = memory[j][0]
-			phase = memory[j][4]
-			if policy_type == 0:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 1:
-				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 2:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x, phase)
-			elif policy_type == 3:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 4:
-				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-
-			q_vals.append(q)
-
-		# backward pass
-		targets = Variable(create_targets(memory, q_vals, target_net, policy_type, gamma=1), requires_grad=False)
-		outputs = torch.stack(q_vals,0).squeeze(1)
-		loss = criterion(outputs, targets)
-		loss.backward(retain_variables=False)
-
-		# clip gradients here ...
-		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
-		for p in policy.parameters():
-			p.data.add_(0.0001, p.grad.data)
-
-		# phase lstm step
-		if policy_type == 2:
-			policy.update_control_gradients()
-
-		# optimizer step
-		optimizer.step()
-
-		# Reset environment and policy hidden vector at the end of episode
-		policy.reset()
-		R.reset()
-		start_loc = sample_start(set_diff)
-		s = State(start_loc,obstacles)
-
-		# copy into target network
-		if i % n_copy_after == 0 and i > 0:
-			target_net = copy.deepcopy(policy)
-
+	app = QtGui.QApplication(sys.argv)
+	visualizer = QTVisualizer('Varying transition dynamics')
 
 	# testing with greedy policy
 	print 'Using greedy policy ...'
@@ -480,6 +324,8 @@ def main():
 	total_reward = 0
 	step_count = 0
 	while R.terminal == False:
+		visualizer.draw_world(agent=s.coordinates, obstacles=s.list_of_obstacles, goals=[(11,0),(11,11)])
+		q_refresh()
 		phase = T.phase(R.t)
 		if policy_type == 0:
 			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
