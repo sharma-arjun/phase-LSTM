@@ -246,8 +246,19 @@ class TransitionFunction():
 		return new_state
 
 	def phase(self,t):
-		return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi
+		#return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi
+		#return ((math.floor(t/self.w)/4 + (self.p/math.pi)) % 2)*math.pi # t3
+		if t == 0:
+			self.old_t = t
+			self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
+		else:
+			if math.floor(self.old_t/self.w) == math.floor(t/self.w):
+				return self.curr_phase
+			else:
+				self.old_t = t
+				self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
 
+		return self.curr_phase
 
 class ExperienceReplay():
 	def __init__(self, max_memory_size = 100):
