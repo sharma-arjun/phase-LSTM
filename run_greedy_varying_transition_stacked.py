@@ -359,7 +359,5 @@ def main():
 	print 'Total reward', total_reward
 	print 'Number of steps', step_count
 
-	f.close()
-
 if __name__ == '__main__':
 	main()
