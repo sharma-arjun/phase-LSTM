@@ -470,14 +470,15 @@ def main():
 		loss = criterion(outputs, targets)
 		loss.backward(retain_variables=False)
 
+		# phase lstm step
+		if policy_type == 2:
+			policy.update_control_gradients()
+
 		# clip gradients here ...
 		nn.utils.clip_grad_norm(policy.parameters(), 5.0)
 		for p in policy.parameters():
 			p.data.add_(0.0001, p.grad.data)
 
-		# phase lstm step
-		if policy_type == 2:
-			policy.update_control_gradients()
 
 		# optimizer step
 		optimizer.step()
