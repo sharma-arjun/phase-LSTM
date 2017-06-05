@@ -220,8 +220,8 @@ class PLSTM(nn.Module):
 		for i in range(len(self.control_gru_list)):
 			for alpha, gru in zip(self.alpha, self.control_gru_list[i]):
 				for key in gru._parameters.keys():
-					gru._parameters[key].grad.data = alpha._grad[key + '_' + str(i)]
+					gru._parameters[key].grad.data += alpha._grad[key + '_' + str(i)]
 
 		for alpha, h2o in zip(self.alpha, self.control_h2o_list):
 			for key in h2o._parameters.keys():
-				h2o._parameters[key].grad.data = alpha._grad[key]
+				h2o._parameters[key].grad.data += alpha._grad[key]
