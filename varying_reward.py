@@ -67,9 +67,9 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return -20*math.sin(w*t + p) + 5
-	#return -20
+	return 20*math.sin(w*t + p) + 5 # r2
+	#return -20*math.sin(w*t + p) + 5 # r1, r3
+	#return -20 # r0
 
 def goal_2_reward_func(w,t,p):
 	return 20*math.sin(w*t + p) + 5
@@ -266,7 +266,7 @@ def main():
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/4, w2=math.pi/8)
-	M = ExperienceReplay(max_memory_size=1)
+	M = ExperienceReplay(max_memory_size=1000)
 	
 	if policy_type == 0: # rnn without phase
 		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)

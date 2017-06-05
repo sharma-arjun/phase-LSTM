@@ -7,15 +7,13 @@ from torch.autograd import Variable
 
 
 class MLP(nn.Module):
-	def __init__(self, input_size, output_size, hidden_size, n_layers=1, batch_size=1):
+	def __init__(self, input_size, output_size, hidden_size, n_layers=1):
 		super(MLP, self).__init__()
 
 		self.input_size = input_size
 		self.output_size = output_size
 		self.hidden_size = hidden_size
 		self.n_layers = n_layers
-		self.batch_size = batch_size
-
 
 		self.l1 = nn.Linear(self.input_size, self.hidden_size)
 		if n_layers == 2:
