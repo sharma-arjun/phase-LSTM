@@ -184,28 +184,28 @@ class TransitionFunction():
 		#change delta based on internal phase
 		if phase == 0: # up
 			if np.random.uniform() < self.prob:
-				delta = (0,1)
+				delta = (delta[0]+0,delta[1]+1)
 		elif phase == math.pi/4: # up and right
 			if np.random.uniform() < self.prob:
-				delta = (1,1)
+				delta = (delta[0]+1,delta[1]+1)
 		elif phase == math.pi/2: # right
 			if np.random.uniform() < self.prob:
-				delta = (1,0)
+				delta = (delta[0]+1,delta[1]+0)
 		elif phase == 3*math.pi/4: # down and right
 			if np.random.uniform() < self.prob:
-				delta = (1,-1)
+				delta = (delta[0]+1,delta[1]-1)
 		elif phase == math.pi: # down
 			if np.random.uniform() < self.prob:
-				delta = (0,-1)
+				delta = (delta[0]+0,delta[1]-1)
 		elif phase == 5*math.pi/4: # down and left
 			if np.random.uniform() < self.prob:
-				delta = (-1,-1)
+				delta = (delta[0]-1,delta[1]-1)
 		elif phase == 3*math.pi/2: # left
 			if np.random.uniform() < self.prob:
-				delta = (-1,0)
+				delta = (delta[0]-1,delta[1]+0)
 		elif phase == 7*math.pi/4: # up and left
 			if np.random.uniform() < self.prob:
-				delta = (-1,1)
+				delta = (delta[0]-1,delta[1]+1)
 		else:
 			print 'Unknown phase'
 			sys.exit()
@@ -306,7 +306,7 @@ def main():
 	#start_loc = (0,5)
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
-	T = TransitionFunction(width,height,obstacle_movement,4, prob=0.75)
+	T = TransitionFunction(width,height,obstacle_movement,4, prob=1.0)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
