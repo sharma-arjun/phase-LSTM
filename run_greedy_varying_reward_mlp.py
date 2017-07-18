@@ -54,8 +54,8 @@ def create_targets(inp, memory, q_vals, target_net, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return -20*math.sin(w*t + p) + 5
+	return 20*math.sin(w*t + p) + 5
+	#return -20*math.sin(w*t + p) + 5
 	#return -20
 
 def goal_2_reward_func(w,t,p):

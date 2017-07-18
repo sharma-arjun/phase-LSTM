@@ -237,18 +237,18 @@ class TransitionFunction():
 
 	def phase(self,t):
 		#return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi # t1 and t2
-		return ((math.floor(t/self.w)/4 + (self.p/math.pi)) % 2)*math.pi # t3
-		#if t == 0:
-		#	self.old_t = t
-		#	self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
-		#else:
-		#	if math.floor(self.old_t/self.w) == math.floor(t/self.w):
-		#		return self.curr_phase
-		#	else:
-		#		self.old_t = t
-		#		self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
+		#return ((math.floor(t/self.w)/4 + (self.p/math.pi)) % 2)*math.pi # t3
+		if t == 0:
+			self.old_t = t
+			self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
+		else:
+			if math.floor(self.old_t/self.w) == math.floor(t/self.w):
+				return self.curr_phase
+			else:
+				self.old_t = t
+				self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
 
-		#return self.curr_phase
+		return self.curr_phase
 
 
 class ExperienceReplay():
@@ -299,6 +299,7 @@ def main():
 	n_copy_after = 1000
 	burn_in = 100
 	policy_type = int(sys.argv[1])
+	probab = float(sys.argv[4])
 
 	obstacles = create_obstacles(width,height)
 
@@ -306,7 +307,7 @@ def main():
 	#start_loc = (0,5)
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
-	T = TransitionFunction(width,height,obstacle_movement,4, prob=1.0)
+	T = TransitionFunction(width,height,obstacle_movement,4, prob=probab)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
@@ -504,6 +505,9 @@ def main():
 		reward = R(s,a,s_prime)
 		total_reward += reward
 		step_count += 1
+		if step_count >= 1000:
+			print 'Episode length limit exceeded in greedy!'
+			break
 		s = s_prime
 
 	print 'Total reward', total_reward
