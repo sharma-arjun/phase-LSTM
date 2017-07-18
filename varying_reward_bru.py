@@ -67,8 +67,8 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return -20*math.sin(w*t + p) + 5
+	return 20*math.sin(w*t + p) + 5
+	#return -20*math.sin(w*t + p) + 5
 	#return -20
 
 def goal_2_reward_func(w,t,p):
@@ -379,7 +379,7 @@ def main():
 		# forward pass through memory sample
 		memory = M.sample()
 		# select fraction of memory to learn from
-		memory = memory[np.random.randint(0,high=int(mem_frac*len(memory))):len(memory)]
+		memory = memory[np.random.randint(0,high=int(mem_frac*len(memory))+1):len(memory)]
 		q_vals = []
 		for j in range(len(memory)):
 			s = memory[j][0]
@@ -465,6 +465,9 @@ def main():
 		reward = R(s,a,s_prime)
 		total_reward += reward
 		step_count += 1
+		if step_count >= 1000:
+			print 'Episode length limit exceeded in greedy!'
+			break
 		s = s_prime
 
 	print 'Total reward', total_reward

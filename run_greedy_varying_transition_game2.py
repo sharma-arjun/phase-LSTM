@@ -239,18 +239,18 @@ class TransitionFunction():
 
 	def phase(self,t):
 		#return ((math.floor(t/self.w)/2 + (self.p/math.pi)) % 2)*math.pi # t1 and t2
-		return ((math.floor(t/self.w)/4 + (self.p/math.pi)) % 2)*math.pi # t3
-		#if t == 0:
-		#	self.old_t = t
-		#	self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
-		#else:
-		#	if math.floor(self.old_t/self.w) == math.floor(t/self.w):
-		#		return self.curr_phase
-		#	else:
-		#		self.old_t = t
-		#		self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
+		#return ((math.floor(t/self.w)/4 + (self.p/math.pi)) % 2)*math.pi # t3
+		if t == 0:
+			self.old_t = t
+			self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
+		else:
+			if math.floor(self.old_t/self.w) == math.floor(t/self.w):
+				return self.curr_phase
+			else:
+				self.old_t = t
+				self.curr_phase =  np.random.randint(0,high=8)*math.pi/4
 
-		#return self.curr_phase
+		return self.curr_phase
 
 
 class ExperienceReplay():
@@ -301,13 +301,14 @@ def main():
 	n_copy_after = 1000
 	burn_in = 100
 	policy_type = int(sys.argv[1])
+	probab = float(sys.argv[-1])
 	if policy_type != 5:
 		policy_checkpoint = sys.argv[2]
 	visualize_flag = False
 
 	obstacles = create_obstacles(width,height)
 
-	T = TransitionFunction(width,height,obstacle_movement,4, prob=0.25)
+	T = TransitionFunction(width,height,obstacle_movement,4, prob=probab)
 	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 

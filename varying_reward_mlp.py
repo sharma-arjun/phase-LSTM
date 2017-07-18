@@ -3,7 +3,7 @@ import copy
 import math
 import random
 import numpy as np
-from phase_lstm_multilayer import PLSTM
+from phase_mlp_multilayer import PMLP
 from lstm import LSTM
 from mlp import MLP
 import torch
@@ -33,14 +33,19 @@ def obstacle_movement(t):
 	elif t % 6 == 5:
 		return (-1, 0) # move left
 
-def create_targets(inp, memory, q_vals, target_net, gamma=1):
+def create_targets(inp, memory, q_vals, target_net, policy_type, gamma=1):
 	# memory: 0 - set of current_states 1: action index 2: reward 3: next state 4: phase 5: phase_prime
 	n_eps = len(memory)
 	action_space_size = target_net.output_size 
 	q_target = q_vals.data.clone()
 	
-	x = Variable(torch.from_numpy(inp).float(), requires_grad=False)
-	q_prime = target_net.forward(x)
+	if policy_type == 0 or policy_type == 1:
+		x = Variable(torch.from_numpy(inp).float(), requires_grad=False)
+		q_prime = target_net.forward(x)
+	elif policy_type == 2:
+		phase = inp[-1]
+		x = Variable(torch.from_numpy(inp[:-1]).float(), requires_grad=False).unsqueeze(0)
+		q_prime = target_net.forward(x,phase)
 
 	max_action_idx = np.argmax(q_prime.data.numpy(), axis=1)
 
@@ -52,8 +57,8 @@ def create_targets(inp, memory, q_vals, target_net, gamma=1):
 
 
 def goal_1_reward_func(w,t,p):
-	#return 20*math.sin(w*t + p) + 5
-	return -20*math.sin(w*t + p) + 5
+	return 20*math.sin(w*t + p) + 5
+	#return -20*math.sin(w*t + p) + 5
 	#return -20
 
 def goal_2_reward_func(w,t,p):
@@ -215,12 +220,12 @@ class ExperienceReplay():
 		state_len = 3*len(sample_list[0][0][0].state)
 		if policy_type == 0:
 			inp_arr = np.zeros((len(sample_list),state_len))
-		elif policy_type == 1:
+		elif policy_type == 1 or policy_type == 2:
 			inp_arr = np.zeros((len(sample_list),state_len+1))
 		for i in range(len(sample_list)):
 			if policy_type == 0:
 				inp_arr[i,:] = np.concatenate((sample_list[i][0][0].state, sample_list[i][0][1].state, sample_list[i][0][2].state))
-			elif policy_type == 1:
+			elif policy_type == 1 or policy_type == 2:
 				inp_arr[i,:] = np.concatenate((sample_list[i][0][0].state, sample_list[i][0][1].state, sample_list[i][0][2].state,  np.array([sample_list[i][4]])))
 
 		return inp_arr
@@ -229,12 +234,12 @@ class ExperienceReplay():
 		state_len = 3*len(sample_list[0][0][0].state)
 		if policy_type == 0:
 			tar_arr = np.zeros((len(sample_list),state_len))
-		elif policy_type == 1:
+		elif policy_type == 1 or policy_type == 2:
 			tar_arr = np.zeros((len(sample_list),state_len+1))
 		for i in range(len(sample_list)):
 			if policy_type == 0:
 				tar_arr[i,:] = np.concatenate((sample_list[i][0][1].state, sample_list[i][0][2].state, sample_list[i][3].state))
-			elif policy_type == 1:
+			elif policy_type == 1 or policy_type == 2:
 				tar_arr[i,:] = np.concatenate((sample_list[i][0][1].state, sample_list[i][0][2].state, sample_list[i][3].state,  np.array([sample_list[i][5]])))
 
 		return tar_arr
@@ -276,13 +281,15 @@ def main():
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
-	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/4, w2=math.pi/8)
+	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=10000)
 	
 	if policy_type == 0: # mlp without phase
 		policy = MLP(input_size=s.state.shape[0]*3, output_size=5, hidden_size=16, n_layers=2)
 	elif policy_type == 1: # mlp with phase as additional input
 		policy = MLP(input_size=s.state.shape[0]*3+1, output_size=5, hidden_size=16, n_layers=2)
+	elif policy_type == 2:
+		policy = PMLP(input_size=s.state.shape[0]*3, output_size=5, hidden_size=16, n_layers=2)
 
 	target_net = copy.deepcopy(policy)
 	criterion = nn.MSELoss()
@@ -346,7 +353,10 @@ def main():
 				inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
 				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
-
+			elif policy_type == 2:
+				inp = np.concatenate((s_2.state, s_1.state, s.state))
+				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				q = policy.forward(x,phase)
 			a = Action(epsilon_greedy_linear_decay(q.data.numpy(), 25000, i))
 			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
 			t = R.t
@@ -386,18 +396,35 @@ def main():
 		memory = M.sample(batch_size)
 		inp = M.inp_arr_from_samples(memory, policy_type)
 		tar = M.tar_arr_from_samples(memory, policy_type)
-		x = Variable(torch.from_numpy(inp).float(), requires_grad=False)
-		outputs = policy.forward(x)
+		if policy_type == 0 or policy_type == 1:
+			x = Variable(torch.from_numpy(inp).float(), requires_grad=False)
+			outputs = policy.forward(x)
 
-		# backward pass
-		targets = Variable(create_targets(tar, memory, outputs, target_net, gamma=1), requires_grad=False)
-		#outputs = torch.stack(q_vals,0).squeeze(1)
-		loss = criterion(outputs, targets)
-		loss.backward(retain_variables=False)
+			# backward pass
+			targets = Variable(create_targets(tar, memory, outputs, target_net, policy_type, gamma=1), requires_grad=False)
+			#outputs = torch.stack(q_vals,0).squeeze(1)
+			loss = criterion(outputs, targets)
+			loss.backward(retain_variables=False)
 
-		# phase lstm step
-		if policy_type == 2:
-			policy.update_control_gradients()
+		elif policy_type == 2:
+			for batch_i in range(batch_size):
+				x = Variable(torch.from_numpy(inp[batch_i,:-1]).float(), requires_grad=False).unsqueeze(0)
+				phase = inp[batch_i,-1]
+				output = policy.forward(x,phase)
+
+				# backward pass
+				target = Variable(create_targets(tar[batch_i,:], [memory[batch_i]], output, target_net, policy_type, gamma=1), requires_grad=False)
+				#outputs = torch.stack(q_vals,0).squeeze(1)
+				loss = criterion(output, target)
+				loss.backward(retain_variables=False)
+
+				# phase lstm step
+				policy.update_control_gradients()
+
+			# divide gradients by batch size
+			for p in policy.parameters():
+				p.grad.data /= batch_size
+
 
 		# clip gradients here ...
 		#nn.utils.clip_grad_norm(policy.parameters(), 5.0)
@@ -437,12 +464,20 @@ def main():
 			inp = np.concatenate((s_2.state, s_1.state, s.state, np.asarray([phase])))
 			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
 			q = policy.forward(x)
+		elif policy_type == 2:
+			inp = np.concatenate((s_2.state, s_1.state, s.state))
+			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			q = policy.forward(x,phase)
+
 		a = Action(np.argmax(q.data.numpy()))
 		t = R.t
 		s_prime = T(s,a,t)
 		reward = R(s,a,s_prime)
 		total_reward += reward
 		step_count += 1
+		if step_count >= 1000:
+			print 'Episode length limit exceeded in greedy!'
+			break
 		s_2 = copy.deepcopy(s_1)
 		s_1 = copy.deepcopy(s)
 		s = s_prime
