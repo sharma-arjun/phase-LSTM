@@ -45,9 +45,9 @@ def spline_w(p):
 #		self._grad['weight'] = None
 #		self._grad['bias'] = None
 
-class PLSTM(nn.Module):
+class PGRU(nn.Module):
 	def __init__(self, input_size, output_size, hidden_size, dtype=torch.FloatTensor, n_layers=1, batch_size=1, scale=1.0, tanh_flag=0):
-		super(PLSTM, self).__init__()
+		super(PGRU, self).__init__()
 
 		self.input_size = input_size
 		self.output_size = output_size

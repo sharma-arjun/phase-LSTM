@@ -3,8 +3,8 @@ import copy
 import math
 import random
 import numpy as np
-from phase_lstm_multilayer_new import PLSTM
-from lstm import LSTM
+from phase_gru import PGRU
+from gru import GRU
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -265,14 +265,14 @@ def main():
 	M = ExperienceReplay(max_memory_size=1000)
 	
 	if policy_type == 0: # rnn without phase
-		policy = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-		target_net = LSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = GRU(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		target_net = GRU(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 1: # rnn with phase as additional input
-		policy = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-		target_net = LSTM(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = GRU(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		target_net = GRU(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 	elif policy_type == 2: # phase rnn
-		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-		target_net = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		policy = PGRU(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+		target_net = PGRU(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 
 
 	#target_net = copy.deepcopy(policy)
@@ -395,7 +395,7 @@ def main():
 			loss = criterion(outputs, targets)
 			loss.backward(retain_variables=False)
 
-			# phase lstm step
+			# phase gru step
 			if policy_type == 2:
 				policy.update_control_gradients()
 
