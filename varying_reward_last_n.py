@@ -5,7 +5,6 @@ import random
 import numpy as np
 from phase_lstm_multilayer_new import PLSTM
 from lstm import LSTM
-from mlp import MLP
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,10 +12,6 @@ from torch.autograd import Variable
 from itertools import product
 
 def create_obstacles(width, height):
-	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
-	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)] # 17 x 17
-	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
-	#return [(4,4),(7,4),(4,8),(7,8)] # 13 x 13
 	return [(3,3),(6,3),(3,6),(6,6)] # 12 x 12
 
 def obstacle_movement(t):
@@ -54,13 +49,7 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1, last_n=0.5)
 			elif policy_type == 2:
 				s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
 				q_prime = target_net.forward(s_prime, phase_prime)
-			elif policy_type == 3:
-				s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
-				q_prime = target_net.forward(s_prime)
-			elif policy_type == 4:
-				inp = np.concatenate((np.array(memory[i][3].state), np.asarray([phase_prime])))
-				s_prime = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q_prime = target_net.forward(s_prime)
+
 
 			q_target[i,:] = q_vals[i][0,:].data.clone()
 			q_target[i, memory[i][1]] = memory[i][2] + gamma*q_prime.data[0,np.argmax(q_prime.data.numpy())]*(1-float(memory[i][6]))
@@ -284,10 +273,7 @@ def main():
 	elif policy_type == 2: # phase rnn
 		policy = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
 		target_net = PLSTM(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 3: # mlp without phase
-		policy = MLP(input_size=s.state.shape[0], output_size=5, hidden_size=8, n_layers=2, batch_size=1)
-	elif policy_type == 4: # mlp with phase as additional input
-		policy = MLP(input_size=s.state.shape[0]+1, output_size=5, hidden_size=8, n_layers=2, batch_size=1)
+
 
 	#target_net = copy.deepcopy(policy)
 	for p, p_t in zip(policy.parameters(), target_net.parameters()):
@@ -347,13 +333,7 @@ def main():
 			elif policy_type == 2:
 				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x, phase)
-			elif policy_type == 3:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
-			elif policy_type == 4:
-				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-				q = policy.forward(x)
+
 
 			a = Action(epsilon_greedy_linear_decay(q.data.numpy(), 25000, i))
 			#a = Action(epsilon_greedy(q.data.numpy(), 0.1))
@@ -405,13 +385,7 @@ def main():
 				elif policy_type == 2:
 					x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 					q = policy.forward(x, phase)
-				elif policy_type == 3:
-					x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-					q = policy.forward(x)
-				elif policy_type == 4:
-					inp = np.concatenate((s.state,np.asarray([phase])))
-					x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-					q = policy.forward(x)
+
 
 				q_vals.append(q)
 
@@ -472,13 +446,7 @@ def main():
 		elif policy_type == 2:
 			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
 			q = policy.forward(x, phase)
-		elif policy_type == 3:
-			x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
-			q = policy.forward(x)
-		elif policy_type == 4:
-			inp = np.concatenate((s.state,np.asarray([phase])))
-			x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
-			q = policy.forward(x)
+
 		a = Action(np.argmax(q.data.numpy()))
 		t = R.t
 		s_prime = T(s,a,t)

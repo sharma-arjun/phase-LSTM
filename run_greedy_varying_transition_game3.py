@@ -5,7 +5,6 @@ import random
 import numpy as np
 from phase_lstm_multilayer_new import PLSTM
 from lstm import LSTM
-from mlp import MLP
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -17,12 +16,7 @@ from visualization import QTVisualizer, q_refresh
 dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 
 def create_obstacles(width, height):
-	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
-	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)] # 17 x 17
-	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
-	#return [(4,4),(7,4),(4,8),(7,8)] # 13 x 13
 	return [(3,3),(6,3),(3,6),(6,6)] # 12 x 12
-	#return [] # no obstacles
 
 def obstacle_movement(t):
 	if t % 6 == 0:
@@ -370,8 +364,7 @@ def main():
 			step_count += 1
 			s = s_prime
 
-		#print 'Total reward', total_reward
-		#print 'Number of steps', step_count
+
 
 		average_total_reward += total_reward
 		average_step_count += step_count

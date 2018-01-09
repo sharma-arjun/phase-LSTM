@@ -3,8 +3,7 @@ import copy
 import math
 import random
 import numpy as np
-from phase_lstm_multilayer import PLSTM
-from lstm import LSTM
+from phase_mlp_multilayer_new import PMLP
 from mlp import MLP
 import torch
 import torch.nn as nn
@@ -15,10 +14,6 @@ from PyQt4 import QtGui, QtCore
 from visualization import QTVisualizer, q_refresh
 
 def create_obstacles(width, height):
-	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
-	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)] # 17 x 17
-	#return [(3,4),(6,4),(9,4),(3,9),(6,9),(9,9)] # 15 x 15
-	#return [(4,4),(7,4),(4,8),(7,8)] # 13 x 13
 	return [(3,3),(6,3),(3,6),(6,6)] # 12 x 12
 
 def obstacle_movement(t):
