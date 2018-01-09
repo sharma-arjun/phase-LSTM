@@ -3,7 +3,7 @@ import copy
 import math
 import random
 import numpy as np
-from phase_mlp_multilayer import PMLP
+from phase_mlp_multilayer_new import PMLP
 from lstm import LSTM
 from mlp import MLP
 import torch
