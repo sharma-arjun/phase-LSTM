@@ -14,6 +14,8 @@ from itertools import product
 from PyQt4 import QtGui, QtCore
 from visualization import QTVisualizer, q_refresh
 
+dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
+
 def create_obstacles(width, height):
 	#return [(4,6),(9,6),(14,6),(4,12),(9,12),(14,12)] # 19 x 19
 	#return [(3,5),(7,5),(11,5),(3,10),(7,10),(11,10)] # 17 x 17
@@ -45,25 +47,25 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 	for i in range(n_eps):
 		phase_prime = memory[i][5]
 		if policy_type == 0:
-			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).type(dtype), requires_grad=False).unsqueeze(0)
 			q_prime = target_net.forward(s_prime)
 		elif policy_type == 1:
 			inp = np.concatenate((np.array(memory[i][3].state), np.asarray([phase_prime])))
-			s_prime = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			s_prime = Variable(torch.from_numpy(inp).type(dtype), requires_grad=False).unsqueeze(0)
 			q_prime = target_net.forward(s_prime)
 		elif policy_type == 2:
-			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).type(dtype), requires_grad=False).unsqueeze(0)
 			q_prime = target_net.forward(s_prime, phase_prime)
 		elif policy_type == 3:
-			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).float(), requires_grad=False).unsqueeze(0)
+			s_prime = Variable(torch.from_numpy(np.array(memory[i][3].state)).type(dtype), requires_grad=False).unsqueeze(0)
 			q_prime = target_net.forward(s_prime)
 		elif policy_type == 4:
 			inp = np.concatenate((np.array(memory[i][3].state), np.asarray([phase_prime])))
-			s_prime = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+			s_prime = Variable(torch.from_numpy(inp).type(dtype), requires_grad=False).unsqueeze(0)
 			q_prime = target_net.forward(s_prime)
 
 		q_target[i,:] = q_vals[i][0,:].data.clone()
-		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[0,np.argmax(q_prime.data.numpy())])
+		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[0,np.argmax(q_prime.data.cpu().numpy())])
 
 	target_net.reset()
 	return q_target
@@ -338,27 +340,27 @@ def main():
 
 			phase = T.phase(R.t)
 			if policy_type == 0:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				x = Variable(torch.from_numpy(s.state).type(dtype), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
-				a = Action(np.argmax(q.data.numpy()))
+				a = Action(np.argmax(q.data.cpu().numpy()))
 			elif policy_type == 1:
 				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				x = Variable(torch.from_numpy(inp).type(dtype), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
-				a = Action(np.argmax(q.data.numpy()))
+				a = Action(np.argmax(q.data.cpu().numpy()))
 			elif policy_type == 2:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				x = Variable(torch.from_numpy(s.state).type(dtype), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x, phase)
-				a = Action(np.argmax(q.data.numpy()))
+				a = Action(np.argmax(q.data.cpu().numpy()))
 			elif policy_type == 3:
-				x = Variable(torch.from_numpy(s.state).float(), requires_grad=False).unsqueeze(0)
+				x = Variable(torch.from_numpy(s.state).type(dtype), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
-				a = Action(np.argmax(q.data.numpy()))
+				a = Action(np.argmax(q.data.cpu().numpy()))
 			elif policy_type == 4:
 				inp = np.concatenate((s.state,np.asarray([phase])))
-				x = Variable(torch.from_numpy(inp).float(), requires_grad=False).unsqueeze(0)
+				x = Variable(torch.from_numpy(inp).type(dtype), requires_grad=False).unsqueeze(0)
 				q = policy.forward(x)
-				a = Action(np.argmax(q.data.numpy()))
+				a = Action(np.argmax(q.data.cpu().numpy()))
 			elif policy_type == 5:
 				a = Action(np.random.randint(0,high=5))
 			t = R.t

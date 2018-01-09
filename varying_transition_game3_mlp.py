@@ -33,7 +33,7 @@ def obstacle_movement(t):
 		return (-1, 0) # move left
 
 def create_targets(inp, memory, q_vals, target_net, policy_type, gamma=1):
-	# memory: 0 - set of current_states 1: action index 2: reward 3: next state 4: phase 5: phase_prime
+	# memory: 0 - set of current_states 1: action index 2: reward 3: next state 4: phase 5: phase_prime 6: terminal
 	n_eps = len(memory)
 	action_space_size = target_net.output_size 
 	q_target = q_vals.data.clone()
@@ -49,7 +49,7 @@ def create_targets(inp, memory, q_vals, target_net, policy_type, gamma=1):
 	max_action_idx = np.argmax(q_prime.data.numpy(), axis=1)
 
 	for i in range(n_eps):
-		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[i,max_action_idx[i]])
+		q_target[i, memory[i][1]] = memory[i][2] + gamma*q_prime.data[i,max_action_idx[i]]*(1-float(memory[i][6]))
 
 	target_net.reset()
 	return q_target
@@ -356,7 +356,7 @@ def main():
 			phase_prime = T.phase(t+1)
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
-			M.add(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
+			M.add(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime, R.terminal))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
@@ -371,7 +371,7 @@ def main():
 
 	print 'Burn in completed'
 
-	filename = 'plotfiles/' + sys.argv[2]
+	filename = '/mnt/sdb1/arjun/plotfiles/' + sys.argv[2]
 	print 'Writing to ' + filename
 	f = open(filename,'w')
 
@@ -407,7 +407,7 @@ def main():
 			reward = R(s,a,s_prime)
 			total_reward += reward
 			phase_prime = T.phase(R.t)
-			M.add(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime))
+			M.add(((s_2, s_1, s), a.delta, reward, s_prime, phase, phase_prime, R.terminal))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
@@ -431,7 +431,7 @@ def main():
 
 		# save policy
 		if i % 1000 == 0 and i> 0:
-			checkpoint_name = 'checkpoints/' + sys.argv[3] + '_' + str(i) + '.pth'
+			checkpoint_name = '/mnt/sdb1/arjun/checkpoints/' + sys.argv[3] + '_' + str(i) + '.pth'
 			f_w = open(checkpoint_name, 'wb')
 			torch.save(policy,f_w)
 

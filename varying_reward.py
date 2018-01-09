@@ -60,7 +60,7 @@ def create_targets(memory, q_vals, target_net, policy_type, gamma=1):
 			q_prime = target_net.forward(s_prime)
 
 		q_target[i,:] = q_vals[i][0,:].data.clone()
-		q_target[i, memory[i][1]] = gamma*(memory[i][2] + q_prime.data[0,np.argmax(q_prime.data.numpy())])
+		q_target[i, memory[i][1]] = (memory[i][2] + gamma*q_prime.data[0,np.argmax(q_prime.data.numpy())])(1-float(memory[i][6]))
 
 	target_net.reset()
 	return q_target
@@ -265,7 +265,7 @@ def main():
 	start_loc = sample_start(set_diff)
 	s = State(start_loc,obstacles)
 	T = TransitionFunction(width,height,obstacle_movement)
-	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/8, w2=math.pi/8)
+	R = RewardFunction(penalty=-1,goal_1_coordinates=(11,0),goal_1_func=goal_1_reward_func,goal_2_coordinates=(11,11),goal_2_func=goal_2_reward_func, w1=math.pi/4, w2=math.pi/8)
 	M = ExperienceReplay(max_memory_size=1000)
 	
 	if policy_type == 0: # rnn without phase
@@ -300,7 +300,7 @@ def main():
 			s_prime = T(s,a,t)
 			reward = R(s,a,s_prime)
 			phase_prime = R.phase()
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime,R.terminal))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break
@@ -349,7 +349,7 @@ def main():
 			reward = R(s,a,s_prime)
 			total_reward += reward
 			phase_prime = R.phase()
-			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime))
+			episode_experience.append((s,a.delta,reward,s_prime,phase,phase_prime,R.terminal))
 			if R.terminal == True:
 				#print 'Reached goal state!'
 				break

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 
 def kn(p, n):
@@ -44,7 +45,7 @@ class Alpha(object):
 		self._grad['bias'] = None
 
 class PLSTM(nn.Module):
-	def __init__(self, input_size, output_size, hidden_size, n_layers=1, batch_size=1):
+	def __init__(self, input_size, output_size, hidden_size, dtype, n_layers=1, batch_size=1, scale=1.0, tanh_flag=0):
 		super(PLSTM, self).__init__()
 
 		self.input_size = input_size
@@ -52,26 +53,29 @@ class PLSTM(nn.Module):
 		self.hidden_size = hidden_size
 		self.n_layers = n_layers
 		self.batch_size = batch_size
+		self.scale = scale
+		self.tanh_flag = tanh_flag
+		self.dtype = dtype
 
 		self.control_gru_list = []
 		self.control_h2o_list = []
 
 	
-		self.gru_00 = nn.GRUCell(self.input_size, self.hidden_size)
-		self.h2o_0 = nn.Linear(self.hidden_size, self.output_size)
-		self.gru_10 = nn.GRUCell(self.input_size, self.hidden_size)
-		self.h2o_1 = nn.Linear(self.hidden_size, self.output_size)
-		self.gru_20 = nn.GRUCell(self.input_size, self.hidden_size)
-		self.h2o_2 = nn.Linear(self.hidden_size, self.output_size)
-		self.gru_30 = nn.GRUCell(self.input_size, self.hidden_size)
-		self.h2o_3 = nn.Linear(self.hidden_size, self.output_size)
+		self.gru_00 = nn.GRUCell(self.input_size, self.hidden_size).type(dtype)
+		self.h2o_0 = nn.Linear(self.hidden_size, self.output_size).type(dtype)
+		self.gru_10 = nn.GRUCell(self.input_size, self.hidden_size).type(dtype)
+		self.h2o_1 = nn.Linear(self.hidden_size, self.output_size).type(dtype)
+		self.gru_20 = nn.GRUCell(self.input_size, self.hidden_size).type(dtype)
+		self.h2o_2 = nn.Linear(self.hidden_size, self.output_size).type(dtype)
+		self.gru_30 = nn.GRUCell(self.input_size, self.hidden_size).type(dtype)
+		self.h2o_3 = nn.Linear(self.hidden_size, self.output_size).type(dtype)
 
 		if n_layers == 2:
 			
-			self.gru_01 = nn.GRUCell(self.hidden_size, self.hidden_size)
-			self.gru_11 = nn.GRUCell(self.hidden_size, self.hidden_size)
-			self.gru_21 = nn.GRUCell(self.hidden_size, self.hidden_size)
-			self.gru_31 = nn.GRUCell(self.hidden_size, self.hidden_size)
+			self.gru_01 = nn.GRUCell(self.hidden_size, self.hidden_size).type(dtype)
+			self.gru_11 = nn.GRUCell(self.hidden_size, self.hidden_size).type(dtype)
+			self.gru_21 = nn.GRUCell(self.hidden_size, self.hidden_size).type(dtype)
+			self.gru_31 = nn.GRUCell(self.hidden_size, self.hidden_size).type(dtype)
 		
 		self.control_gru_list.append([self.gru_00, self.gru_10, self.gru_20, self.gru_30])
 		if n_layers == 2:
@@ -84,17 +88,17 @@ class PLSTM(nn.Module):
 			self.alpha.append(Alpha(n_layers))
 
 		self.init_controls(self.control_gru_list, self.control_h2o_list, self.alpha)
-		self.h_0 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True)
+		self.h_0 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True).type(dtype)
 		if n_layers == 2:
-			self.h_1 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True)
+			self.h_1 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True).type(dtype)
 
 		self.gru_list = []
 		self.h2o_list = []
 		self.phase_list = []
 
 		# to initialize grad of control gru and h2o ... I need to do this stupid thing ...
-		dummy_x = Variable(torch.zeros(batch_size, input_size), requires_grad=False)
-		dummy_y = Variable(torch.zeros(batch_size, output_size), requires_grad=False)
+		dummy_x = Variable(torch.zeros(batch_size, input_size), requires_grad=False).type(dtype)
+		dummy_y = Variable(torch.zeros(batch_size, output_size), requires_grad=False).type(dtype)
 		dummy_criterion = nn.MSELoss()
 
 		if n_layers == 1:
@@ -113,9 +117,9 @@ class PLSTM(nn.Module):
 				dummy_loss.backward()
 
 		# reset to zero after dummy pass
-		self.h_0 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True)
+		self.h_0 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True).type(dtype)
 		if n_layers == 2:
-			self.h_1 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True)
+			self.h_1 = Variable(torch.zeros(batch_size, hidden_size), requires_grad=True).type(dtype)
 
 	def forward(self,x,phase):
 		w = self.weight_from_phase(phase, self.alpha)
@@ -127,7 +131,7 @@ class PLSTM(nn.Module):
 			gru1 = nn.GRUCell(self.hidden_size, self.hidden_size)
 			grus.append(gru1)
 
-		self.set_weight(w, grus, h2o)
+		self.set_weight(w, grus, h2o)	
 		self.gru_list.append(grus)
 		self.h2o_list.append(h2o)
 		self.phase_list.append(phase)
@@ -135,16 +139,22 @@ class PLSTM(nn.Module):
 		self.h_0 = gru0(x, self.h_0)
 		if self.n_layers == 2:
 			self.h_1 = gru1(self.h_0, self.h_1)
-			o = h2o(self.h_1)
+			if self.tanh_flag:
+				o = F.tanh(h2o(self.h_1))
+			else:
+				o = h2o(self.h_1)
 		else:
-			o = h2o(self.h_0)
+			if self.tanh_flag:
+				o = F.tanh(h2o(self.h_0))
+			else:
+				o = h2o(self.h_0)
 
-		return o
+		return self.scale*o
 
 	def reset(self):
-		self.h_0 = Variable(torch.zeros(self.batch_size, self.hidden_size), requires_grad=True)
+		self.h_0 = Variable(torch.zeros(self.batch_size, self.hidden_size), requires_grad=True).type(self.dtype)
 		if self.n_layers == 2:
-			self.h_1 = Variable(torch.zeros(self.batch_size, self.hidden_size), requires_grad=True)
+			self.h_1 = Variable(torch.zeros(self.batch_size, self.hidden_size), requires_grad=True).type(self.dtype)
 		
 		self.gru_list = []
 		self.h2o_list = []
@@ -170,30 +180,32 @@ class PLSTM(nn.Module):
 			gru._parameters['bias_ih'].data = w['bias_ih_' + str(count)]
 			gru._parameters['bias_hh'].data = w['bias_hh_' + str(count)]
 			count += 1
+			gru.type(self.dtype)
 
 		h2o._parameters['weight'].data = w['weight']
 		h2o._parameters['bias'].data = w['bias']
+		h2o.type(self.dtype)
 
 	def init_controls(self, list_of_gru, list_of_h2o, alpha):
 		for i in range(len(alpha)):
 			for j in range(len(list_of_gru)):
 				gru = list_of_gru[j][i]
-				alpha[i]._parameters['weight_ih_' + str(j)] = torch.from_numpy(np.copy(gru._parameters['weight_ih'].data.numpy()))
-				alpha[i]._parameters['weight_hh_' + str(j)] = torch.from_numpy(np.copy(gru._parameters['weight_hh'].data.numpy()))
-				alpha[i]._parameters['bias_ih_' + str(j)] = torch.from_numpy(np.copy(gru._parameters['bias_ih'].data.numpy()))
-				alpha[i]._parameters['bias_hh_' + str(j)] = torch.from_numpy(np.copy(gru._parameters['bias_hh'].data.numpy()))
+				alpha[i]._parameters['weight_ih_' + str(j)] = gru._parameters['weight_ih'].data.clone()
+				alpha[i]._parameters['weight_hh_' + str(j)] = gru._parameters['weight_hh'].data.clone()
+				alpha[i]._parameters['bias_ih_' + str(j)] = gru._parameters['bias_ih'].data.clone()
+				alpha[i]._parameters['bias_hh_' + str(j)] = gru._parameters['bias_hh'].data.clone()
 
 				#initialize alpha grads as zero here using shape ...
-				alpha[i]._grad['weight_ih_' + str(j)] = torch.zeros(gru._parameters['weight_ih'].data.numpy().shape)
-				alpha[i]._grad['weight_hh_' + str(j)] = torch.zeros(gru._parameters['weight_hh'].data.numpy().shape)
-				alpha[i]._grad['bias_ih_' + str(j)] = torch.zeros(gru._parameters['bias_ih'].data.numpy().shape)
-				alpha[i]._grad['bias_hh_' + str(j)] = torch.zeros(gru._parameters['bias_hh'].data.numpy().shape)
+				alpha[i]._grad['weight_ih_' + str(j)] = torch.zeros(gru._parameters['weight_ih'].data.size()).type(self.dtype)
+				alpha[i]._grad['weight_hh_' + str(j)] = torch.zeros(gru._parameters['weight_hh'].data.size()).type(self.dtype)
+				alpha[i]._grad['bias_ih_' + str(j)] = torch.zeros(gru._parameters['bias_ih'].data.size()).type(self.dtype)
+				alpha[i]._grad['bias_hh_' + str(j)] = torch.zeros(gru._parameters['bias_hh'].data.size()).type(self.dtype)
 
 			h2o = list_of_h2o[i]
-			alpha[i]._parameters['weight'] = torch.from_numpy(np.copy(h2o._parameters['weight'].data.numpy()))
-			alpha[i]._parameters['bias'] = torch.from_numpy(np.copy(h2o._parameters['bias'].data.numpy()))
-			alpha[i]._grad['weight'] = torch.zeros(h2o._parameters['weight'].data.numpy().shape)
-			alpha[i]._grad['bias'] = torch.zeros(h2o._parameters['bias'].data.numpy().shape)
+			alpha[i]._parameters['weight'] = h2o._parameters['weight'].data.clone()
+			alpha[i]._parameters['bias'] = h2o._parameters['bias'].data.clone()
+			alpha[i]._grad['weight'] = torch.zeros(h2o._parameters['weight'].data.size()).type(self.dtype)
+			alpha[i]._grad['bias'] = torch.zeros(h2o._parameters['bias'].data.size()).type(self.dtype)
 
 
 	def update_control_gradients(self):
